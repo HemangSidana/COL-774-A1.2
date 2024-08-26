@@ -1,6 +1,7 @@
 import sys
 import numpy as np
 from scipy.special import softmax
+from sklearn.preprocessing import StandardScaler
 
 def generate_data(data):
     X = data[:, :-1]
@@ -95,26 +96,48 @@ def gradient_descent3(X, Y, W, counts, n0, epochs, batch_size):
             W -= learning_rate * gradient
 
 
+
+def generate_data_partb(train, test):
+    X = train[:, :-1]
+    X= X.astype(np.float64)
+    Y = train[:, -1]
+    Y = Y.astype(int)-1
+    unique, counts = np.unique(Y, return_counts=True)
+    W =np.zeros((X.shape[1]+1, len(unique)), dtype=np.float64)
+    X_test = test
+    one = np.ones((X_test.shape[0], 1))
+    X_test= X_test.astype(np.float64)
+    scaler = StandardScaler().fit(X)
+    X = scaler.transform(X)
+    X_test = scaler.transform(X_test)
+    X_test= np.hstack((one,X_test))
+    one = np.ones((X.shape[0],1))
+    X= np.hstack((one,X))
+    return X,Y,W,X_test,counts
+
 def compute_n_partb(X, Y, W, gradient, n0, counts):
     nl = 0.0
     nh = n0
-    while loss(X, Y, W, counts) > loss(X, Y, W - nh*gradient, counts):
+    prev_loss = loss(X, Y, W, counts)
+    while prev_loss > loss(X, Y, W - nh*gradient, counts):
+        prev_loss = loss(X, Y, W - nh*gradient, counts)
         nh *= 2
-    while loss(X, Y, W, counts) < loss(X, Y, W - nh*gradient, counts):
-        nh /= 2
-    nh *= 2
-    for _ in range(20):
+    if abs(nh-n0)<1e-9:
+        while loss(X, Y, W, counts) < loss(X, Y, W - nh*gradient, counts):
+            nh /= 2
+        nh *= 2
+    for _ in range(5):
         n1 = (2*nl + nh)/3
         n2 = (nl + 2*nh)/3
         if loss(X, Y, W - n1*gradient, counts) > loss(X, Y, W - n2*gradient, counts):
             nl = n1
         else:
             nh = n2
-    return nh-nl,(nl+nh)/2
+    return (nl+nh)/2
+
 
 def gradient_descent3_partb(X, Y, W, counts, n0, epochs, batch_size):
     n = X.shape[0]
-    n_with_epochs = [n0]*int(np.ceil(n/batch_size))
     for _ in range(epochs):
         batch_num = 0
         for start in range(0, n, batch_size):
@@ -122,12 +145,13 @@ def gradient_descent3_partb(X, Y, W, counts, n0, epochs, batch_size):
             X_batch = X[start:end]
             Y_batch = Y[start:end]
             batch_loss = loss(X_batch, Y_batch, W, counts)
-            # print(f"Epoch{i+1}, Batch{1+int(start/batch_size)}, Loss{batch_loss}")
+            print(f"Epoch{_+1}, Batch{1+int(start/batch_size)}, Loss{batch_loss}")
+
             gradient = compute_gradient(X_batch, Y_batch, W, counts)
-            next_n0,learning_rate= compute_n_partb(X_batch, Y_batch, W, gradient, n_with_epochs[batch_num], counts)
-            n_with_epochs[batch_num] = next_n0
+            learning_rate= compute_n_partb(X_batch, Y_batch, W, gradient, n0, counts)
             W -= learning_rate * gradient
             batch_num += 1
+    return W
 
 
 def write(array,file):
@@ -172,13 +196,9 @@ if len(sys.argv)>1:
     elif type=='b' and len(sys.argv)==6:
         train= read_csv(sys.argv[2])
         test = read_csv(sys.argv[3])
-        X,Y,W,counts = generate_data(train)
-        gradient_descent3_partb(X,Y,W,counts,1e-9,5,100)
+        X,Y,W,X_test,counts = generate_data_partb(train, test)
+        W = gradient_descent3_partb(X,Y,W,counts,1e4,25,87595)
         output_model_weight = W.flatten()
-        X_test = test
-        one = np.ones((X_test.shape[0], 1))
-        X_test= np.hstack((one,X_test))
-        X_test= X_test.astype(np.float64)
         Z = X_test @ W
         output_model_pred = softmax(Z, axis=1)
         write(output_model_weight,sys.argv[4])
